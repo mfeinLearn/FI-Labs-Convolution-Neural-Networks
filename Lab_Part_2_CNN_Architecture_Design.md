@@ -1,0 +1,17 @@
+# Lab Part 2: CNN Architecture Design Decisions
+
+**Prompt:** What kernel sizes would you choose for different layers and why?
+
+**Answer:** I would use 3×3 kernels for almost every convolutional layer. Two stacked 3×3 layers cover the same 5×5 region as one larger kernel, but with fewer parameters and a ReLU between them, so the network can form more complex local patterns at lower cost. That matters on an edge device on the line, where latency and memory are limited. A hairline crack or finish flaw is a fine local signal, and a small kernel matches that scale. I would not start with 7×7 or 11×11 filters: they inflate multiply count and blur small defects. A 1×1 kernel is useful later, only to mix channels and build bottlenecks, not to see space. If the first layer sees a high-resolution frame, a single 5×5 there is optional for slightly broader texture, then the rest of the stack stays 3×3.
+
+**Prompt:** How would you incorporate pooling layers, and what benefits would they provide in this specific application?
+
+**Answer:** I would place 2×2 max pooling, stride 2, after the early and middle conv blocks, not after every layer. Max pooling keeps the strongest local response, which is what a crack, pit, or sharp deformation produces, and cuts spatial size by about 4×, so later layers are cheaper in both compute and memory. That is the main reason it fits a production-line device. It also adds a little translation invariance: a bracket is not always centered or at the same distance, and a small shift should not change the defect call. I would not pool aggressively in the first block. A hairline crack is only a few pixels wide, and early downsampling can erase it. Three pooling stages is enough to shrink a typical inspection crop while still leaving a feature map the deep layers can use.
+
+**Prompt:** What considerations would guide your decisions about network depth (number of layers) and width (number of filters per layer)?
+
+**Answer:** Depth has to be enough to build the hierarchy from edges to part-level defects, but not so deep that inference misses the line rate or the model overfits 50,000 images. A practical target is a compact stack: a few conv–pool stages, then two or three deeper blocks, rather than a 50-layer network. Width should grow gradually, about 32 filters, then 64, then 128, and stop before 256 or 512 on the edge device. Extra filters buy more defect variety, but each one is another set of multiplies per pixel. For mobile deployment I would use bottleneck blocks and depthwise separable convolutions, as in MobileNet, so most spatial filtering is done per channel and only a 1×1 mixes them. That keeps expressiveness for cracks versus deformations without a full dense convolution at every layer.
+
+**Prompt:** How might you leverage transfer learning in this scenario, and what would be the advantages?
+
+**Answer:** I would start from a lightweight ImageNet backbone such as MobileNetV2 and fine-tune it on the 50,000 labeled part images. Early filters already detect edges, contrast changes, and texture, which transfer to metal surfaces even though the source task was not automotive. I would freeze those early layers at first, train the new classification head (defective vs. non-defective, or defect type), then unfreeze the later blocks with a small learning rate. The gain is faster training, less risk of overfitting a mid-size parts dataset, and an architecture already sized for edge inference, instead of training a wide custom net from random weights.
